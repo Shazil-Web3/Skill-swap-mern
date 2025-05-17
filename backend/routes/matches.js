@@ -99,18 +99,104 @@ router.post('/request', auth(), async (req, res) => {
   }
 });
 
-// Get received match requests
+// Get received matches for a user
 router.get('/received', auth(), async (req, res) => {
   try {
-    const matches = await Match.find({ skillOwnerId: req.user._id })
-      .populate('skillId')
-      .populate('requesterId', 'name email')
-      .sort({ createdAt: -1 });
+    console.log('Fetching matches for user:', req.user._id);
+    
+    // Find matches where user is either requester or skill owner
+    const matches = await Match.find({
+      $or: [
+        { requesterId: req.user._id },
+        { skillOwnerId: req.user._id }
+      ]
+    })
+    .populate({
+      path: 'skillId',
+      select: 'title description'
+    })
+    .populate({
+      path: 'requesterId',
+      select: 'name email'
+    })
+    .populate({
+      path: 'skillOwnerId',
+      select: 'name email'
+    })
+    .sort({ createdAt: -1 });
 
-    res.json(matches);
+    console.log('Found matches:', matches.length);
+
+    // Get payment information for each match
+    const matchesWithPayments = await Promise.all(matches.map(async (match) => {
+      // Find all payments for this match
+      const payments = await Payment.find({ matchId: match._id })
+        .populate('userId', 'name email');
+      
+      console.log('Payments for match:', match._id, payments);
+
+      // Get payment status for both users
+      const requesterPayment = payments.find(p => 
+        p.userId._id.toString() === match.requesterId._id.toString()
+      );
+      const skillOwnerPayment = payments.find(p => 
+        p.userId._id.toString() === match.skillOwnerId._id.toString()
+      );
+
+      console.log('Payment status:', {
+        matchId: match._id,
+        requesterPayment: requesterPayment?.status || 'PENDING',
+        skillOwnerPayment: skillOwnerPayment?.status || 'PENDING'
+      });
+      
+      // Check if both users have paid
+      const bothPaid = requesterPayment?.status === 'Approved' && skillOwnerPayment?.status === 'Approved';
+      
+      // Determine user's role in this match
+      const isRequester = match.requesterId._id.toString() === req.user._id.toString();
+      const isSkillOwner = match.skillOwnerId._id.toString() === req.user._id.toString();
+      
+      // Log match details for debugging
+      console.log('Match details:', {
+        matchId: match._id,
+        requesterId: match.requesterId._id,
+        skillOwnerId: match.skillOwnerId._id,
+        currentUserId: req.user._id,
+        isRequester,
+        isSkillOwner,
+        status: match.status,
+        requesterPaymentStatus: requesterPayment?.status || 'PENDING',
+        skillOwnerPaymentStatus: skillOwnerPayment?.status || 'PENDING',
+        bothPaid
+      });
+
+      // Create the match object with all necessary information
+      const matchObject = {
+        ...match.toObject(),
+        payments,
+        bothPaid,
+        requesterPaymentStatus: requesterPayment?.status || 'PENDING',
+        skillOwnerPaymentStatus: skillOwnerPayment?.status || 'PENDING',
+        userRole: isRequester ? 'requester' : 'skillOwner',
+        canAccept: isSkillOwner && match.status === 'Pending',
+        canPay: match.status === 'Accepted' && (
+          (isRequester && (!requesterPayment || requesterPayment.status !== 'Approved')) ||
+          (isSkillOwner && (!skillOwnerPayment || skillOwnerPayment.status !== 'Approved'))
+        ),
+        isCurrentUserRequester: isRequester,
+        isCurrentUserSkillOwner: isSkillOwner,
+        currentUserId: req.user._id
+      };
+
+      console.log('Processed match object:', matchObject);
+      return matchObject;
+    }));
+
+    console.log('Matches with payments:', matchesWithPayments.length);
+    res.json(matchesWithPayments);
   } catch (err) {
     console.error('Error fetching matches:', err);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 });
 

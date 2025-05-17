@@ -8,6 +8,7 @@ const skillsRoutes = require('./routes/skills');
 const matchRoutes = require('./routes/matches');
 const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
+const scheduleRoutes = require('./routes/scheduleRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -46,6 +47,7 @@ app.use('/api/skills', skillsRoutes);
 app.use('/api/matches', matchRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes); // Admin routes
+app.use('/api/schedule', scheduleRoutes); // Schedule routes
 console.log('Routes registered successfully');
 
 

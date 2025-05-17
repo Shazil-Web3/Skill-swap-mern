@@ -86,6 +86,17 @@ exports.approvePayment = async (req, res) => {
       { new: true }
     );
     
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // Update the match's payment status
+    await Match.findByIdAndUpdate(
+      payment.matchId,
+      { paymentStatus: 'approved' },
+      { new: true }
+    );
+    
     // Update match status if both payments are approved
     await updateMatchStatusIfComplete(payment.matchId);
     
